@@ -1,0 +1,23 @@
+
+---
+
+# 🚫 .gitignore (IMPORTANT)
+
+```bash
+# Node
+node_modules/
+build/
+
+# Python
+__pycache__/
+*.pyc
+.env
+
+# Audio files
+backend/audio/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+venv/
