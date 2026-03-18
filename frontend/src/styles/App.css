@@ -1,71 +1,75 @@
 body {
   margin: 0;
   font-family: "Segoe UI", sans-serif;
-  background: linear-gradient(135deg, #eef2f7, #dfe9f3);
+  background: linear-gradient(135deg, #eef2f7, #f9fafc);
 }
 
-/* Container */
 .container {
-  text-align: center;
+  max-width: 600px;
+  margin: 40px auto;
+  background: white;
   padding: 20px;
+  border-radius: 16px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+  text-align: center;
 }
 
-/* Title */
 h1 {
-  color: #333;
+  margin-bottom: 20px;
 }
 
-/* Mic Button */
 .mic-btn {
-  margin-top: 20px;
-  padding: 12px 25px;
-  font-size: 16px;
-  background: orange;
-  color: white;
+  padding: 12px 20px;
   border: none;
-  border-radius: 25px;
+  border-radius: 30px;
+  background: #007bff;
+  color: white;
+  font-size: 16px;
   cursor: pointer;
-  transition: 0.3s ease;
+  transition: 0.3s;
 }
 
 .mic-btn:hover {
-  background: darkorange;
+  background: #0056b3;
 }
 
-.mic-btn.active {
-  background: red;
-}
-
-/* Chat Box */
 .chat-box {
-  margin-top: 30px;
-  max-width: 600px;
-  margin-left: auto;
-  margin-right: auto;
-  padding: 15px;
+  margin-top: 20px;
+  max-height: 350px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
 }
 
-/* Messages */
 .message {
-  padding: 10px 15px;
-  margin: 10px 0;
-  border-radius: 15px;
-  max-width: 70%;
+  max-width: 60%;
+  padding: 10px 14px;
+  margin: 8px;
+  border-radius: 12px;
   word-wrap: break-word;
+  font-size: 14px;
+  animation: fadeIn 0.3s ease-in;
 }
 
-/* User Message */
-.user {
+.message.user {
   background: #007bff;
   color: white;
   margin-left: auto;
-  text-align: right;
 }
 
-/* Bot Message */
-.bot {
-  background: #e4e6eb;
+.message.bot {
+  background: #e5e5ea;
   color: black;
   margin-right: auto;
-  text-align: left;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
