@@ -1,1 +1,71 @@
-/* Styling */
+body {
+  margin: 0;
+  font-family: "Segoe UI", sans-serif;
+  background: linear-gradient(135deg, #eef2f7, #dfe9f3);
+}
+
+/* Container */
+.container {
+  text-align: center;
+  padding: 20px;
+}
+
+/* Title */
+h1 {
+  color: #333;
+}
+
+/* Mic Button */
+.mic-btn {
+  margin-top: 20px;
+  padding: 12px 25px;
+  font-size: 16px;
+  background: orange;
+  color: white;
+  border: none;
+  border-radius: 25px;
+  cursor: pointer;
+  transition: 0.3s ease;
+}
+
+.mic-btn:hover {
+  background: darkorange;
+}
+
+.mic-btn.active {
+  background: red;
+}
+
+/* Chat Box */
+.chat-box {
+  margin-top: 30px;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+  padding: 15px;
+}
+
+/* Messages */
+.message {
+  padding: 10px 15px;
+  margin: 10px 0;
+  border-radius: 15px;
+  max-width: 70%;
+  word-wrap: break-word;
+}
+
+/* User Message */
+.user {
+  background: #007bff;
+  color: white;
+  margin-left: auto;
+  text-align: right;
+}
+
+/* Bot Message */
+.bot {
+  background: #e4e6eb;
+  color: black;
+  margin-right: auto;
+  text-align: left;
+}
