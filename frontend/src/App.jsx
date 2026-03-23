@@ -1,60 +1,122 @@
 import { useState } from "react";
+import "./App.css";
 
 const API_URL = "http://localhost:8000";
 
 function App() {
-  const [message, setMessage] = useState("");
-  const [response, setResponse] = useState(null);
+  const [messages, setMessages] = useState([
+    {
+      from: "bot",
+      text: "Namaste! 🙏 I'm your IRCTC assistant. Ask me about PNR status, train running status, or seat availability!"
+    }
+  ]);
+  const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
 
   const sendMessage = async () => {
-    if (!message.trim()) return;
+    if (!input.trim() || loading) return;
+
+    const userMsg = input.trim();
+    setMessages(prev => [...prev, { from: "user", text: userMsg }]);
+    setInput("");
     setLoading(true);
 
     try {
       const res = await fetch(`${API_URL}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({ message: userMsg }),
       });
+
       const data = await res.json();
-      setResponse(data);
-    } catch (err) {
-      setResponse({ response_text: "Error connecting to backend!", intent: "error", emotion: "sad" });
+
+      setMessages(prev => [
+        ...prev,
+        { from: "bot", text: data.response_text, intent: data.intent }
+      ]);
+    } catch {
+      setMessages(prev => [
+        ...prev,
+        {
+          from: "bot",
+          text: "⚠️ Cannot connect to backend. Is it running?",
+          intent: "error"
+        }
+      ]);
     }
 
     setLoading(false);
   };
 
   return (
-    <div style={{ maxWidth: 600, margin: "60px auto", fontFamily: "sans-serif", padding: "0 20px" }}>
-      <h1>🚂 IRCTC Voice Chatbot</h1>
-      <p style={{ color: "#666" }}>Phase 1 — Basic connection test</p>
+    <div className="container">
 
-      <div style={{ display: "flex", gap: 8 }}>
+      {/* Header */}
+      <div className="header">
+        <h1>🚂 IRCTC Voice Chatbot</h1>
+        <p>Phase 2 — Intent Detection</p>
+      </div>
+
+      {/* Chat Window */}
+      <div className="chat-window">
+        {messages.map((msg, i) => (
+          <div key={i} className={`message ${msg.from}`}>
+            {msg.text}
+
+            {msg.intent && (
+              <div className={`intent ${msg.intent}`}>
+                Intent: {msg.intent}
+              </div>
+            )}
+          </div>
+        ))}
+
+        {loading && (
+          <div className="message bot loading">
+            Thinking...
+          </div>
+        )}
+      </div>
+
+      {/* Input */}
+      <div className="input-area">
         <input
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-          placeholder="Type a message..."
-          style={{ flex: 1, padding: "10px 14px", fontSize: 16, borderRadius: 8, border: "1px solid #ccc" }}
+          className="input-box"
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && sendMessage()}
+          placeholder="Try: Check PNR 1234567890 or Where is train 12345"
         />
+
         <button
+          className="send-btn"
           onClick={sendMessage}
           disabled={loading}
-          style={{ padding: "10px 20px", fontSize: 16, borderRadius: 8, background: "#2563eb", color: "#fff", border: "none", cursor: "pointer" }}
         >
-          {loading ? "..." : "Send"}
+          Send
         </button>
       </div>
 
-      {response && (
-        <div style={{ marginTop: 24, padding: 16, background: "#f1f5f9", borderRadius: 10 }}>
-          <p><strong>Response:</strong> {response.response_text}</p>
-          <p><strong>Intent:</strong> {response.intent}</p>
-          <p><strong>Emotion:</strong> {response.emotion}</p>
-        </div>
-      )}
+      {/* Quick Test Buttons */}
+      <div className="quick-tests">
+        <p className="quick-title">Quick tests:</p>
+
+        {[
+          "Check PNR 1234567890",
+          "Where is train 12345",
+          "Is seat available?",
+          "Hello"
+        ].map(q => (
+          <button
+            key={q}
+            className="quick-btn"
+            onClick={() => setInput(q)}
+          >
+            {q}
+          </button>
+        ))}
+      </div>
+
     </div>
   );
 }
