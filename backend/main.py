@@ -4,9 +4,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 from intent_engine import detect_intent
-from response_builder import build_response
+from intent_router import route_intent
 
-app = FastAPI(title="IRCTC Voice Chatbot API", version="0.3.0")
+app = FastAPI(title="IRCTC Voice Chatbot API", version="0.4.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -19,12 +19,12 @@ app.add_middleware(
 # ---- Models ----
 
 class ConversationTurn(BaseModel):
-    role: str     # "user" or "assistant"
+    role: str
     content: str
 
 class ChatRequest(BaseModel):
     message: str
-    history: Optional[List[ConversationTurn]] = []   # conversation so far
+    history: Optional[List[ConversationTurn]] = []
 
 class ChatResponse(BaseModel):
     response_text: str
@@ -36,7 +36,7 @@ class ChatResponse(BaseModel):
 
 @app.get("/")
 def root():
-    return {"status": "IRCTC Chatbot API is running!", "version": "0.3.0"}
+    return {"status": "IRCTC Chatbot API is running!", "version": "0.4.0"}
 
 @app.get("/health")
 def health():
@@ -44,25 +44,23 @@ def health():
 
 @app.post("/chat", response_model=ChatResponse)
 def chat(request: ChatRequest):
+    # Validate
     if not request.message or not request.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty")
 
-    # Convert history to plain dicts for ollama_client
+    # Step 1: Convert history to plain dicts
     history = [{"role": t.role, "content": t.content} for t in request.history]
 
-    # Detect intent using Ollama
+    # Step 2: Detect intent using Ollama
     intent_result = detect_intent(request.message, history)
 
-    # Build final response
-    # If Ollama already gave us a response_text, use it directly
-    if intent_result.get("response_text") and not intent_result.get("missing"):
-        return ChatResponse(
-            response_text=intent_result["response_text"],
-            intent=intent_result["intent"],
-            data_required=intent_result.get("data_required", "none"),
-            emotion=intent_result.get("emotion", "friendly")
-        )
+    # Step 3: Route to correct handler
+    response = route_intent(intent_result)
 
-    # Otherwise use response_builder for missing-info prompts
-    response = build_response(intent_result, request.message)
-    return ChatResponse(**response)
+    # Step 4: Return clean response
+    return ChatResponse(
+        response_text=response["response_text"],
+        intent=response["intent"],
+        data_required=response["data_required"],
+        emotion=response["emotion"]
+    )

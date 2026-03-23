@@ -1,4 +1,3 @@
-
 import httpx
 import json
 import re
@@ -11,6 +10,7 @@ OLLAMA_URL = os.getenv("OLLAMA_URL")
 MODEL_NAME = os.getenv("OLLAMA_MODEL")
 
 
+# 🔥 FINAL SYSTEM PROMPT (STRICT + SAFE)
 SYSTEM_PROMPT = """You are an IRCTC railway assistant. You MUST respond ONLY in valid JSON.
 
 CRITICAL RULES — follow exactly:
@@ -18,12 +18,20 @@ CRITICAL RULES — follow exactly:
 2. A 10-digit number after "PNR" is ALWAYS a valid PNR number. Never question it.
 3. A 4-5 digit number after "train" is ALWAYS a valid train number.
 4. Never ask the user to re-enter data they already gave.
+5. Only extract values explicitly present in the CURRENT user message.
+6. NEVER reuse or infer values from previous conversation history.
+7. If a value is not present in the current message, set it to null.
+8. Do NOT guess missing fields like date, class, or stations.
 
-Intent rules:
-- User mentions PNR or ticket number → intent = "pnr_status"
-- User asks where a train is / running status → intent = "train_status"
-- User asks about seats / booking / availability → intent = "seat_availability"
-- Anything else → intent = "general_query"
+Intent rules (follow strictly — do not mix these up):
+- User mentions PNR number OR asks about ticket/booking status → intent = "pnr_status"
+- User asks where a train IS, live location, running status, "where is train XXXXX" → intent = "train_status"
+- User asks about seat availability, booking seats → intent = "seat_availability"
+- Greetings, general questions, help → intent = "general_query"
+
+IMPORTANT:
+- "Where is train 12301" is ALWAYS train_status. Never pnr_status.
+- Only set intent = pnr_status when the user explicitly mentions PNR.
 
 JSON format (always return this exact structure):
 {
@@ -42,16 +50,50 @@ JSON format (always return this exact structure):
 }"""
 
 
+# 🔥 ANTI-HALLUCINATION CLEANER (MOST IMPORTANT)
+def clean_extracted_fields(extracted: dict, user_message: str) -> dict:
+    """
+    Keeps ONLY values present in current user message.
+    Removes hallucinated values from history.
+    """
+    text = user_message.lower()
+    cleaned = {}
+
+    # ✅ PNR (strict 10 digits)
+    pnr_match = re.findall(r"\b\d{10}\b", user_message)
+    cleaned["pnr_number"] = pnr_match[0] if pnr_match else None
+
+    # ✅ Train number (4–5 digits ONLY)
+    train_match = re.findall(r"\b\d{4,5}\b", user_message)
+    cleaned["train_number"] = train_match[0] if train_match else None
+
+    # ✅ Date (only if explicitly mentioned)
+    if any(word in text for word in ["today", "tomorrow"]):
+        cleaned["date"] = extracted.get("date")
+    else:
+        cleaned["date"] = None
+
+    # ✅ Class detection (only if present)
+    classes = ["sl", "3a", "2a", "1a"]
+    found_class = next((c.upper() for c in classes if c in text), None)
+    cleaned["class"] = found_class
+
+    # ✅ Stations (only if explicitly present)
+    cleaned["from_station"] = extracted.get("from_station") if "from" in text else None
+    cleaned["to_station"] = extracted.get("to_station") if "to" in text else None
+
+    return cleaned
+
+
 def ask_ollama(user_message: str, conversation_history: list = None) -> dict:
     """
-    Sends user message to Ollama and returns parsed JSON response.
-    conversation_history is a list of previous messages for context.
+    Sends user message to Ollama and returns parsed + cleaned response.
     """
 
-    # Build the full prompt with conversation history for context
+    # 🔹 Limit history (prevents context leakage)
     history_text = ""
     if conversation_history:
-        for turn in conversation_history[-4:]:  # last 4 turns only
+        for turn in conversation_history[-4:]:
             role = "User" if turn["role"] == "user" else "Assistant"
             history_text += f"{role}: {turn['content']}\n"
 
@@ -64,41 +106,45 @@ def ask_ollama(user_message: str, conversation_history: list = None) -> dict:
         "stream": False,
         "format": "json",
         "options": {
-            "temperature": 0.3,
+            "temperature": 0.2,  # 🔥 low = stable output
             "top_p": 0.9
         }
     }
 
     try:
-        # Increased timeout to 120 seconds, with retry
-        for attempt in range(2):  # try twice
+        for attempt in range(2):
             try:
                 with httpx.Client(timeout=120.0) as client:
                     response = client.post(OLLAMA_URL, json=payload)
                     response.raise_for_status()
-                break  # success, exit retry loop
+                break
             except httpx.TimeoutException:
                 if attempt == 1:
-                    return fallback_response("Ollama is taking too long. Try a smaller model like llama3.2:1b")
-                continue  # retry once
+                    return fallback_response("Server timeout. Please try again.")
+                continue
 
         result = response.json()
         raw_text = result.get("response", "")
 
-        # Parse the JSON response from Ollama
         parsed = parse_ollama_response(raw_text)
+
+        # 🚨 FINAL SAFETY LAYER
+        parsed["extracted"] = clean_extracted_fields(
+            parsed.get("extracted", {}),
+            user_message
+        )
+
         return parsed
 
     except httpx.ConnectError:
-        return fallback_response("Ollama is not running. Please start it with: ollama serve")
+        return fallback_response("Ollama is not running. Start using: ollama serve")
     except Exception as e:
-        return fallback_response(f"Something went wrong: {str(e)}")
+        return fallback_response(f"Error: {str(e)}")
 
 
 def parse_ollama_response(raw_text: str) -> dict:
     """
-    Tries to extract valid JSON from Ollama's response.
-    LLMs sometimes wrap JSON in markdown — this handles that.
+    Extract JSON safely from model output.
     """
     raw_text = raw_text.strip()
     raw_text = re.sub(r"```json\s*", "", raw_text)
@@ -114,11 +160,13 @@ def parse_ollama_response(raw_text: str) -> dict:
             "extracted": data.get("extracted", {})
         }
     except json.JSONDecodeError:
-        return fallback_response("I had trouble understanding that. Could you rephrase?")
+        return fallback_response("I couldn't understand that. Please try again.")
 
 
 def fallback_response(message: str) -> dict:
-    """Returns a safe fallback response when Ollama fails."""
+    """
+    Safe fallback response.
+    """
     return {
         "response_text": message,
         "intent": "general_query",
