@@ -64,3 +64,4 @@ def chat(request: ChatRequest):
         data_required=response["data_required"],
         emotion=response["emotion"]
     )
+

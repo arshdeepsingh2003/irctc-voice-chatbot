@@ -32,4 +32,6 @@ Thumbs.db
 .idea/
 
 # 🔐 Misc
-*.env
+
+
+.env
