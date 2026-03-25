@@ -227,6 +227,7 @@ Rules:
 6. Use 1-2 emojis naturally.
 7. NEVER make up data.
 8. Output ONLY the reply text.
+9. do not provide emojis
 """
 
 

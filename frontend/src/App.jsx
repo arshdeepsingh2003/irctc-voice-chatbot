@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import "./App.css";
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -13,32 +13,110 @@ const intentColors = {
 
 export default function App() {
 
-  // ── State ──
   const [messages, setMessages] = useState([
     {
       from: "bot",
-      text: "Namaste! 🙏 I'm your IRCTC assistant powered by AI. Ask me about PNR status, train running status, or seat availability!"
+      text: "Namaste! I'm your IRCTC assistant. Ask me about PNR status, train running status, or seat availability!"
     }
   ]);
   const [history, setHistory] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // ✅ Context state
   const [pendingIntent, setPendingIntent] = useState(null);
   const [pendingData, setPendingData] = useState({});
 
-  // ✅ Auto scroll
+  // 🎤 Listening state
+  const [listening, setListening] = useState(false);
+
+  // 🔊 TTS state
+  const [speaking, setSpeaking] = useState(false);
+  const [ttsEnabled, setTtsEnabled] = useState(true);
+  const synthRef = useRef(window.speechSynthesis);
+
+  // 🎤 Speech Recognition
+  const recognitionRef = useRef(null);
+
+  useEffect(() => {
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      console.log("Speech Recognition not supported");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = "en-IN";
+
+    recognitionRef.current = recognition;
+
+    recognition.onstart = () => setListening(true);
+
+    recognition.onresult = (event) => {
+      let transcript = "";
+
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        transcript += event.results[i][0].transcript;
+      }
+
+      setInput(transcript);
+
+      if (event.results[event.results.length - 1].isFinal) {
+        recognition.finalText = transcript;
+      }
+    };
+
+    recognition.onend = () => {
+      setListening(false);
+
+      if (recognition.finalText?.trim()) {
+        const finalText = recognition.finalText;
+        recognition.finalText = "";
+        setTimeout(() => sendMessage(finalText), 200);
+      }
+    };
+
+  }, []);
+
+  const startListening = () => {
+    const recognition = recognitionRef.current;
+    if (!recognition) return;
+    recognition.start();
+  };
+
+  // 🔊 Speak function
+  const speak = (text) => {
+    if (!ttsEnabled || !synthRef.current) return;
+
+    synthRef.current.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "en-IN";
+
+    utterance.onstart = () => setSpeaking(true);
+    utterance.onend = () => setSpeaking(false);
+
+    synthRef.current.speak(utterance);
+  };
+
+  const stopSpeaking = () => {
+    synthRef.current.cancel();
+    setSpeaking(false);
+  };
+
+  // Auto scroll
   const bottomRef = useRef(null);
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   // ── Send Message ──
-  const sendMessage = async () => {
-    if (!input.trim() || loading) return;
-
-    const userText = input.trim();
+  const sendMessage = async (customText) => {
+    const userText = customText || input.trim();
+    if (!userText || loading) return;
 
     setMessages(prev => [...prev, { from: "user", text: userText }]);
     setInput("");
@@ -65,26 +143,25 @@ export default function App() {
 
       const data = await res.json();
 
-      // ✅ Save context
       setPendingIntent(data.pending_intent || null);
       setPendingData(data.pending_data || {});
 
-      // ✅ Update history
       setHistory(prev => [
         ...prev,
         { role: "user", content: userText },
         { role: "assistant", content: data.response_text }
       ]);
 
-      // ✅ Update UI
-      setMessages(prev => [
-        ...prev,
-        {
-          from: "bot",
-          text: data.response_text,
-          intent: data.intent
-        }
-      ]);
+      const botMsg = {
+        from: "bot",
+        text: data.response_text,
+        intent: data.intent
+      };
+
+      setMessages(prev => [...prev, botMsg]);
+
+      // 🔊 Speak response
+      speak(data.response_text);
 
     } catch (err) {
       console.error(err);
@@ -102,14 +179,12 @@ export default function App() {
     setLoading(false);
   };
 
-  // ── Clear Chat ──
   const clearChat = () => {
+    stopSpeaking();
     setMessages([
       { from: "bot", text: "Chat cleared! How can I help you? 🚂" }
     ]);
     setHistory([]);
-
-    // ✅ Reset context
     setPendingIntent(null);
     setPendingData({});
   };
@@ -117,30 +192,48 @@ export default function App() {
   return (
     <div className="container">
 
-      {/* Header */}
       <div className="header">
         <div>
           <h1>🚂 IRCTC Voice Chatbot</h1>
-          <p>Phase 6 — Human-like responses</p>
+          <p>Voice Enabled Chat</p>
         </div>
 
-        {/* ✅ Pending intent badge */}
         {pendingIntent && (
           <div className="pending-badge">
             Collecting: {pendingIntent.replace("_", " ")}
           </div>
         )}
 
+        <button
+          className="clear-btn"
+          onClick={() => {
+            setTtsEnabled(prev => !prev);
+            stopSpeaking();
+          }}
+        >
+          {ttsEnabled ? "🔊 Voice ON" : "🔇 Voice OFF"}
+        </button>
+
         <button className="clear-btn" onClick={clearChat}>
           Clear Chat
         </button>
       </div>
 
-      {/* Chat Window */}
+
+
       <div className="chat-window">
         {messages.map((msg, i) => (
           <div key={i} className={`message ${msg.from}`}>
             {msg.text}
+
+            {msg.from === "bot" && ttsEnabled && (
+              <button
+                className="replay-icon"
+                onClick={() => speak(msg.text)}
+              >
+                🔊
+              </button>
+            )}
 
             {msg.intent && (
               <div
@@ -159,11 +252,9 @@ export default function App() {
           </div>
         )}
 
-        {/* ✅ Auto scroll anchor */}
         <div ref={bottomRef} />
       </div>
 
-      {/* Input */}
       <div className="input-area">
         <input
           className="input-box"
@@ -172,36 +263,24 @@ export default function App() {
           onKeyDown={(e) => e.key === "Enter" && sendMessage()}
           placeholder="Ask anything about your train..."
         />
+
+        <button
+          className={`mic-btn ${listening ? "mic-active" : ""}`}
+          onClick={startListening}
+        >
+          {listening ? "🎙️ Listening..." : "🎙️"}
+        </button>
+
         <button
           className="send-btn"
-          onClick={sendMessage}
+          onClick={() => sendMessage()}
           disabled={loading}
         >
-          {loading ? "..." : "Send"}
+          Send
         </button>
       </div>
 
-      {/* Quick Tests */}
-      <div className="quick-tests">
-        <span className="quick-title">Try these:</span>
-
-        {[
-          "Check PNR 1234567890",
-          "Where is train 12301",
-          "I want to check seats",
-          "Any seats from NDLS to BCT tomorrow in 3A?",
-          "Hello!"
-        ].map((q) => (
-          <button
-            key={q}
-            className="quick-btn"
-            onClick={() => setInput(q)}
-          >
-            {q}
-          </button>
-        ))}
-      </div>
-
+      
     </div>
-  )
+  );
 }
