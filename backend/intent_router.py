@@ -1,6 +1,4 @@
 # intent_router.py
-# Routes detected intent to the correct handler.
-# Safer version — does not override Ollama's intent based on response text.
 
 from handlers.pnr_handler     import handle_pnr
 from handlers.train_handler   import handle_train_status
@@ -13,27 +11,31 @@ def route_intent(intent_result: dict) -> dict:
     Routes the intent_result from Ollama to the correct handler.
     Priority: extracted data > declared intent > fallback
     """
+
     intent      = intent_result.get("intent", "general_query")
     extracted   = intent_result.get("extracted", {})
     ollama_text = intent_result.get("response_text", "")
 
-    # ── Smart re-routing based on EXTRACTED DATA only (not response text) ──
-    # This is safer than scanning response text which can contain any word.
-
     pnr_number   = extracted.get("pnr_number")
     train_number = extracted.get("train_number")
+    date         = extracted.get("date")
+    travel_class = extracted.get("class")
+    from_station = extracted.get("from_station")
+    to_station   = extracted.get("to_station")
 
-    # If Ollama gave wrong intent but extracted a train number
-    # AND the declared intent is general → fix it
+    # ── FIX 1: Seat flow continuation (MOST IMPORTANT) ──
+    if intent == "general_query":
+        if any([train_number, date, travel_class, from_station, to_station]):
+            intent = "seat_availability"
+
+    # ── FIX 2: Existing smart rerouting ──
     if intent == "general_query" and train_number:
         intent = "train_status"
 
-    # If Ollama gave wrong intent but extracted a PNR number
-    # AND the declared intent is general → fix it
     if intent == "general_query" and pnr_number:
         intent = "pnr_status"
 
-    # ── Route to correct handler ──
+    # ── Route ──
     if intent == "pnr_status":
         return handle_pnr(extracted)
 

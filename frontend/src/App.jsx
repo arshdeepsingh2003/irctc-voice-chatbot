@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import "./App.css";
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -12,6 +12,8 @@ const intentColors = {
 };
 
 export default function App() {
+
+  // ── State ──
   const [messages, setMessages] = useState([
     {
       from: "bot",
@@ -22,28 +24,59 @@ export default function App() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // ✅ Context state
+  const [pendingIntent, setPendingIntent] = useState(null);
+  const [pendingData, setPendingData] = useState({});
+
+  // ✅ Auto scroll
+  const bottomRef = useRef(null);
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  // ── Send Message ──
   const sendMessage = async () => {
     if (!input.trim() || loading) return;
 
     const userText = input.trim();
+
     setMessages(prev => [...prev, { from: "user", text: userText }]);
     setInput("");
     setLoading(true);
 
-    const updatedHistory = [...history, { role: "user", content: userText }];
+    const updatedHistory = [
+      ...history,
+      { role: "user", content: userText }
+    ];
 
     try {
       const res = await fetch(`${API_URL}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: userText, history: updatedHistory }),
+        body: JSON.stringify({
+          message: userText,
+          history: updatedHistory,
+          pending_intent: pendingIntent,
+          pending_data: pendingData
+        }),
       });
 
       if (!res.ok) throw new Error("Server error");
+
       const data = await res.json();
 
-      setHistory([...updatedHistory, { role: "assistant", content: data.response_text }]);
+      // ✅ Save context
+      setPendingIntent(data.pending_intent || null);
+      setPendingData(data.pending_data || {});
 
+      // ✅ Update history
+      setHistory(prev => [
+        ...prev,
+        { role: "user", content: userText },
+        { role: "assistant", content: data.response_text }
+      ]);
+
+      // ✅ Update UI
       setMessages(prev => [
         ...prev,
         {
@@ -53,7 +86,9 @@ export default function App() {
         }
       ]);
 
-    } catch {
+    } catch (err) {
+      console.error(err);
+
       setMessages(prev => [
         ...prev,
         {
@@ -67,9 +102,16 @@ export default function App() {
     setLoading(false);
   };
 
+  // ── Clear Chat ──
   const clearChat = () => {
-    setMessages([{ from: "bot", text: "Chat cleared! How can I help you? 🚂" }]);
+    setMessages([
+      { from: "bot", text: "Chat cleared! How can I help you? 🚂" }
+    ]);
     setHistory([]);
+
+    // ✅ Reset context
+    setPendingIntent(null);
+    setPendingData({});
   };
 
   return (
@@ -79,8 +121,16 @@ export default function App() {
       <div className="header">
         <div>
           <h1>🚂 IRCTC Voice Chatbot</h1>
-          <p>Phase 3 — Ollama LLM</p>
+          <p>Phase 6 — Human-like responses</p>
         </div>
+
+        {/* ✅ Pending intent badge */}
+        {pendingIntent && (
+          <div className="pending-badge">
+            Collecting: {pendingIntent.replace("_", " ")}
+          </div>
+        )}
+
         <button className="clear-btn" onClick={clearChat}>
           Clear Chat
         </button>
@@ -97,7 +147,7 @@ export default function App() {
                 className="intent"
                 style={{ color: intentColors[msg.intent] || "#888" }}
               >
-                {msg.intent.replace("_", " ")}
+                {msg.intent.replace(/_/g, " ")}
               </div>
             )}
           </div>
@@ -108,6 +158,9 @@ export default function App() {
             🤔 Thinking...
           </div>
         )}
+
+        {/* ✅ Auto scroll anchor */}
+        <div ref={bottomRef} />
       </div>
 
       {/* Input */}
@@ -115,8 +168,8 @@ export default function App() {
         <input
           className="input-box"
           value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={e => e.key === "Enter" && sendMessage()}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && sendMessage()}
           placeholder="Ask anything about your train..."
         />
         <button
@@ -124,7 +177,7 @@ export default function App() {
           onClick={sendMessage}
           disabled={loading}
         >
-          Send
+          {loading ? "..." : "Send"}
         </button>
       </div>
 
@@ -134,11 +187,11 @@ export default function App() {
 
         {[
           "Check PNR 1234567890",
-          "Where is Rajdhani Express?",
-          "Any seats from Delhi to Mumbai?",
-          "What classes does 12301 have?",
+          "Where is train 12301",
+          "I want to check seats",
+          "Any seats from NDLS to BCT tomorrow in 3A?",
           "Hello!"
-        ].map(q => (
+        ].map((q) => (
           <button
             key={q}
             className="quick-btn"
@@ -150,5 +203,5 @@ export default function App() {
       </div>
 
     </div>
-  );
+  )
 }

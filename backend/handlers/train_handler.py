@@ -3,6 +3,7 @@
 import re
 from api.railway_client import fetch_train_status
 from api.api_helpers import format_train_status_response
+from ollama_client import humanize_response   # ✅ NEW
 
 
 def validate_train_number(train_number: str) -> bool:
@@ -90,11 +91,18 @@ def handle_train_status(extracted: dict) -> dict:
             "status": "api_error"
         }
 
-    # STEP 6: Format response
+    # STEP 6: Format response (UNCHANGED)
     formatted = format_train_status_response(result.get("data"))
 
+    # STEP 7: Humanize with Ollama (✅ NEW)
+    human_reply = humanize_response(
+        raw_data_text=formatted,
+        intent="train_status",
+        context=f"Train number: {train_clean}"
+    )
+
     return {
-        "response_text": formatted,
+        "response_text": human_reply,   # ✅ replaced formatted → human_reply
         "intent": "train_status",
         "data_required": "none",
         "emotion": "friendly",

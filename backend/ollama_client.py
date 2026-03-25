@@ -11,86 +11,130 @@ MODEL_NAME = os.getenv("OLLAMA_MODEL")
 
 
 # 🔥 FINAL SYSTEM PROMPT (STRICT + SAFE)
-SYSTEM_PROMPT = """You are an IRCTC railway assistant. You MUST respond ONLY in valid JSON.
+SYSTEM_PROMPT = """You are an IRCTC railway assistant. Respond ONLY in valid JSON.
 
-CRITICAL RULES — follow exactly:
-1. Output ONLY raw JSON. No explanation. No markdown. No extra text.
-2. A 10-digit number after "PNR" is ALWAYS a valid PNR number. Never question it.
-3. A 4-5 digit number after "train" is ALWAYS a valid train number.
-4. Never ask the user to re-enter data they already gave.
-5. Only extract values explicitly present in the CURRENT user message.
-6. NEVER reuse or infer values from previous conversation history.
-7. If a value is not present in the current message, set it to null.
-8. Do NOT guess missing fields like date, class, or stations.
+STRICT INTENT RULES — no exceptions:
 
-Intent rules (follow strictly — do not mix these up):
-- User mentions PNR number OR asks about ticket/booking status → intent = "pnr_status"
-- User asks where a train IS, live location, running status, "where is train XXXXX" → intent = "train_status"
-- User asks about seat availability, booking seats → intent = "seat_availability"
-- Greetings, general questions, help → intent = "general_query"
+"seat_availability" triggers when user says ANY of:
+  - seats, seat, availability, available, book, booking, check seats,
+    want to check seats, I want to check, want to book, coach
 
-IMPORTANT:
-- "Where is train 12301" is ALWAYS train_status. Never pnr_status.
-- Only set intent = pnr_status when the user explicitly mentions PNR.
+"train_status" triggers when user says ANY of:
+  - where is train, live status, running status, is train running,
+    train location, train number (ONLY if previous intent was train_status)
 
-JSON format (always return this exact structure):
+"pnr_status" triggers when user says ANY of:
+  - pnr, ticket status, booking status, passenger status
+
+"general_query" triggers for:
+  - hello, hi, thanks, help, what can you do, anything else
+
+EXAMPLES — memorize these:
+  "I want to check seats"        → seat_availability
+  "check seat availability"      → seat_availability
+  "any seats on train 12301"     → seat_availability
+  "seats in sleeper"             → seat_availability
+  "where is train 12301"         → train_status
+  "live status of 12301"         → train_status
+  "check PNR 1234567890"         → pnr_status
+  "hello"                        → general_query
+
+EXTRACTION RULES:
+  - Only extract values explicitly stated in THIS message
+  - Never reuse values from previous messages
+  - If not stated → set null
+  - A train_number is ONLY 4-5 digits when it appears ALONE or after the word "train"
+  - NEVER extract a year like 2025 or 2026 as a train_number
+  - Date patterns like "26 April 2026", "25 Jun 2025", "26/04/2026" → always set as "date", never train_number
+  - If message is ONLY a date like "26 April 2026" → date = "26 April 2026", train_number = null
+
+DATE EXTRACTION EXAMPLES — memorize:
+  "26 April 2026"     → date = "26 April 2026",  train_number = null
+  "25 Jun 2025"       → date = "25 Jun 2025",    train_number = null
+  "travel on 1 May"   → date = "1 May",          train_number = null
+  "train 12301"       → train_number = "12301",  date = null
+  "12301 on 25 June"  → train_number = "12301",  date = "25 June"
+
+RESPONSE FORMAT — always this exact JSON, nothing else:
 {
-  "response_text": "your reply here",
-  "intent": "pnr_status | train_status | seat_availability | general_query",
-  "data_required": "pnr_number | train_number | none",
+  "response_text": "friendly reply",
+  "intent": "seat_availability | train_status | pnr_status | general_query",
+  "data_required": "what is needed or none",
   "emotion": "friendly",
   "extracted": {
-    "pnr_number": "10-digit number or null",
-    "train_number": "4-5 digit number or null",
-    "date": "date string or null",
-    "class": "SL/3A/2A/1A or null",
-    "from_station": "station name or null",
-    "to_station": "station name or null"
+    "pnr_number": null,
+    "train_number": null,
+    "date": null,
+    "class": null,
+    "from_station": null,
+    "to_station": null
   }
 }"""
 
 
 # 🔥 ANTI-HALLUCINATION CLEANER (MOST IMPORTANT)
 def clean_extracted_fields(extracted: dict, user_message: str) -> dict:
-    """
-    Keeps ONLY values present in current user message.
-    Removes hallucinated values from history.
-    """
     text = user_message.lower()
-    cleaned = {}
+    cleaned = dict(extracted)  # ✅ preserve previous data
 
-    # ✅ PNR (strict 10 digits)
+    # ✅ PNR
     pnr_match = re.findall(r"\b\d{10}\b", user_message)
-    cleaned["pnr_number"] = pnr_match[0] if pnr_match else None
+    if pnr_match:
+        cleaned["pnr_number"] = pnr_match[0]
 
-    # ✅ Train number (4–5 digits ONLY)
+    # ✅ Train number (avoid years)
     train_match = re.findall(r"\b\d{4,5}\b", user_message)
-    cleaned["train_number"] = train_match[0] if train_match else None
+    train_match = [t for t in train_match if t not in ["2024", "2025", "2026", "2027"]]
+    if train_match:
+        cleaned["train_number"] = train_match[0]
 
-    # ✅ Date (only if explicitly mentioned)
-    if any(word in text for word in ["today", "tomorrow"]):
-        cleaned["date"] = extracted.get("date")
-    else:
-        cleaned["date"] = None
+    # 🔥 DATE (ONLY UPDATE IF FOUND)
+    date_patterns = [
+        r'\b\d{1,2}\s*(jan|feb|mar|apr|april|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s*\d{0,4}',
+        r'\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}'
+    ]
 
-    # ✅ Class detection (only if present)
-    classes = ["sl", "3a", "2a", "1a"]
+    date_found = None
+
+    for pattern in date_patterns:
+        match = re.search(pattern, text)
+        if match:
+            date_found = match.group()
+            break
+
+    if "today" in text:
+        date_found = "today"
+    elif "tomorrow" in text:
+        date_found = "tomorrow"
+
+    if date_found:
+        cleaned["date"] = date_found  # ✅ ONLY if found
+
+    # ✅ Class
+    classes = ["sl", "3a", "2a", "1a", "cc", "2s"]
     found_class = next((c.upper() for c in classes if c in text), None)
-    cleaned["class"] = found_class
+    if found_class:
+        cleaned["class"] = found_class
 
-    # ✅ Stations (only if explicitly present)
-    cleaned["from_station"] = extracted.get("from_station") if "from" in text else None
-    cleaned["to_station"] = extracted.get("to_station") if "to" in text else None
+    # 🔥 STATIONS (ONLY UPDATE IF FOUND)
+    station_match = re.search(r'\b([A-Z]{3,5})\s+to\s+([A-Z]{3,5})\b', user_message.upper())
+
+    if station_match:
+        cleaned["from_station"] = station_match.group(1)
+        cleaned["to_station"] = station_match.group(2)
+    else:
+        from_match = re.search(r'from\s+([A-Z]{3,5})', user_message.lower())
+        to_match = re.search(r'to\s+([A-Z]{3,5})', user_message.lower())
+
+        if from_match:
+            cleaned["from_station"] = from_match.group(1).upper()
+        if to_match:
+            cleaned["to_station"] = to_match.group(1).upper()
 
     return cleaned
 
 
 def ask_ollama(user_message: str, conversation_history: list = None) -> dict:
-    """
-    Sends user message to Ollama and returns parsed + cleaned response.
-    """
-
-    # 🔹 Limit history (prevents context leakage)
     history_text = ""
     if conversation_history:
         for turn in conversation_history[-4:]:
@@ -106,7 +150,7 @@ def ask_ollama(user_message: str, conversation_history: list = None) -> dict:
         "stream": False,
         "format": "json",
         "options": {
-            "temperature": 0.2,  # 🔥 low = stable output
+            "temperature": 0.2,
             "top_p": 0.9
         }
     }
@@ -128,7 +172,6 @@ def ask_ollama(user_message: str, conversation_history: list = None) -> dict:
 
         parsed = parse_ollama_response(raw_text)
 
-        # 🚨 FINAL SAFETY LAYER
         parsed["extracted"] = clean_extracted_fields(
             parsed.get("extracted", {}),
             user_message
@@ -143,9 +186,6 @@ def ask_ollama(user_message: str, conversation_history: list = None) -> dict:
 
 
 def parse_ollama_response(raw_text: str) -> dict:
-    """
-    Extract JSON safely from model output.
-    """
     raw_text = raw_text.strip()
     raw_text = re.sub(r"```json\s*", "", raw_text)
     raw_text = re.sub(r"```\s*", "", raw_text)
@@ -164,9 +204,6 @@ def parse_ollama_response(raw_text: str) -> dict:
 
 
 def fallback_response(message: str) -> dict:
-    """
-    Safe fallback response.
-    """
     return {
         "response_text": message,
         "intent": "general_query",
@@ -174,3 +211,73 @@ def fallback_response(message: str) -> dict:
         "emotion": "friendly",
         "extracted": {}
     }
+
+
+HUMANIZER_PROMPT = """You are a warm, friendly IRCTC railway assistant for Indian Railways.
+
+You will be given structured railway data. Your job is to convert it into a natural, 
+conversational reply — like a helpful friend explaining it, not a robot reading data.
+
+Rules:
+1. Be warm, friendly and helpful. Use simple English.
+2. Keep it concise — 3 to 5 sentences max.
+3. Highlight the most important information first.
+4. Add helpful context where relevant.
+5. End with a helpful offer like "Anything else I can help you with? 😊"
+6. Use 1-2 emojis naturally.
+7. NEVER make up data.
+8. Output ONLY the reply text.
+"""
+
+
+def humanize_response(raw_data_text: str, intent: str, context: str = "") -> str:
+    intent_context = {
+        "pnr_status": "The user asked about their PNR / ticket status.",
+        "train_status": "The user asked about live train running status.",
+        "seat_availability": "The user asked about seat availability for booking.",
+    }
+
+    user_prompt = (
+        f"{intent_context.get(intent, 'The user asked a railway question.')}\n\n"
+        f"Here is the railway data:\n\n"
+        f"{raw_data_text}\n\n"
+        f"{'Additional context: ' + context if context else ''}\n\n"
+        f"Now write a warm, friendly reply based on this data."
+    )
+
+    payload = {
+        "model": MODEL_NAME,
+        "prompt": user_prompt,
+        "system": HUMANIZER_PROMPT,
+        "stream": False,
+        "options": {
+            "temperature": 0.7,
+            "top_p": 0.9
+        }
+    }
+
+    try:
+        for attempt in range(2):
+            try:
+                with httpx.Client(timeout=120.0) as client:
+                    response = client.post(OLLAMA_URL, json=payload)
+                    response.raise_for_status()
+                break
+            except httpx.TimeoutException:
+                if attempt == 1:
+                    return raw_data_text
+                continue
+
+        result = response.json()
+        reply = result.get("response", "").strip()
+
+        reply = re.sub(r"```.*?```", "", reply, flags=re.DOTALL).strip()
+        reply = re.sub(r"^\{.*?\}$", "", reply, flags=re.DOTALL).strip()
+
+        if not reply or len(reply) < 20:
+            return raw_data_text
+
+        return reply
+
+    except Exception:
+        return raw_data_text

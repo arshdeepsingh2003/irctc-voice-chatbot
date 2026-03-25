@@ -3,6 +3,7 @@
 import re
 from api.railway_client import fetch_pnr_status
 from api.api_helpers import format_pnr_response
+from ollama_client import humanize_response   # ✅ NEW
 
 
 def validate_pnr(pnr: str) -> bool:
@@ -59,7 +60,7 @@ def handle_pnr(extracted: dict, user_message: str = "") -> dict:
             "status": "invalid_data"
         }
 
-    # ── NEW: Fetch real data from API ──
+    # ── Fetch real data from API ──
     result = fetch_pnr_status(pnr_clean)
 
     if not result.get("success"):
@@ -71,11 +72,18 @@ def handle_pnr(extracted: dict, user_message: str = "") -> dict:
             "status": "api_error"
         }
 
-    # ── Format response ──
+    # ── Format response (UNCHANGED) ──
     formatted = format_pnr_response(result.get("data"))
 
+    # ── Humanize with Ollama (✅ NEW) ──
+    human_reply = humanize_response(
+        raw_data_text=formatted,
+        intent="pnr_status",
+        context=f"PNR number: {pnr_clean}"
+    )
+
     return {
-        "response_text": formatted,
+        "response_text": human_reply,   # ✅ replaced formatted → human_reply
         "intent": "pnr_status",
         "data_required": "none",
         "emotion": "friendly",

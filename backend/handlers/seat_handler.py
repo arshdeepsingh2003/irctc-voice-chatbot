@@ -13,24 +13,62 @@ VALID_CLASSES = {
     "2s": "2S", "second sitting": "2S"
 }
 
+# 🔥 DATE NORMALIZER (USE THIS)
+def normalize_date(date_str: str):
+    if not date_str:
+        return None
+
+    months = {
+        "january": "Jan", "jan": "Jan",
+        "february": "Feb", "feb": "Feb",
+        "march": "Mar", "mar": "Mar",
+        "april": "Apr", "apr": "Apr",
+        "may": "May",
+        "june": "Jun", "jun": "Jun",
+        "july": "Jul", "jul": "Jul",
+        "august": "Aug", "aug": "Aug",
+        "september": "Sep", "sep": "Sep",
+        "october": "Oct", "oct": "Oct",
+        "november": "Nov", "nov": "Nov",
+        "december": "Dec", "dec": "Dec",
+    }
+
+    parts = date_str.lower().split()
+
+    if len(parts) >= 2:
+        day = parts[0]
+        month = months.get(parts[1], parts[1])
+        year = parts[2] if len(parts) > 2 else ""
+
+        return f"{day} {month} {year}".strip()
+
+    return date_str
+
 
 def normalize_class(raw_class: str) -> str | None:
-    """Converts user input like '3ac' or 'sleeper' to standard code."""
     if not raw_class:
         return None
     return VALID_CLASSES.get(raw_class.lower().strip())
 
 
 def handle_seat_availability(extracted: dict) -> dict:
-    """
-    Main handler for seat_availability intent.
-    """
 
     train_number = extracted.get("train_number")
     date         = extracted.get("date")
     travel_class = extracted.get("class")
     from_station = extracted.get("from_station")
     to_station   = extracted.get("to_station")
+
+    import re
+
+    # ── SAFETY GUARD ──
+    if train_number and re.fullmatch(r'20\d{2}', str(train_number).strip()):
+        if not date:
+            date = train_number
+        train_number = None
+
+    if train_number and len(str(train_number).strip()) > 5:
+        train_number = None
 
     # STEP 1: Train number
     if not train_number:
@@ -51,6 +89,9 @@ def handle_seat_availability(extracted: dict) -> dict:
             "emotion": "friendly",
             "status": "missing_data"
         }
+
+    # 🔥 CRITICAL FIX — normalize BEFORE validation
+    date = normalize_date(date)
 
     # STEP 3: Class
     if not travel_class:
@@ -73,7 +114,7 @@ def handle_seat_availability(extracted: dict) -> dict:
             "status": "invalid_data"
         }
 
-    # 🔥 NEW (but safe): Ask for stations if missing
+    # STEP 5: Stations
     if not from_station or not to_station:
         return {
             "response_text": f"One last thing! 🛤️ What's your boarding station and destination station code? (e.g. NDLS for New Delhi, BCT for Mumbai Central)",
@@ -83,7 +124,7 @@ def handle_seat_availability(extracted: dict) -> dict:
             "status": "missing_data"
         }
 
-    # 🔥 NEW: Date parsing for API
+    # 🔥 API DATE PARSING (now works because normalized)
     api_date = parse_date_for_api(date)
     if not api_date:
         return {
@@ -94,7 +135,7 @@ def handle_seat_availability(extracted: dict) -> dict:
             "status": "invalid_data"
         }
 
-    # ── Fetch real data from API ──
+    # ── Fetch data ──
     result = fetch_seat_availability(
         train_number=train_number,
         date=api_date,
@@ -112,11 +153,21 @@ def handle_seat_availability(extracted: dict) -> dict:
             "status": "api_error"
         }
 
-    # ── Format response ──
     formatted = format_seat_availability_response(result.get("data"))
 
+    from ollama_client import humanize_response
+
+    human_reply = humanize_response(
+        raw_data_text=formatted,
+        intent="seat_availability",
+        context=(
+            f"Train {train_number}, {normalized} class, "
+            f"{from_station.upper()} to {to_station.upper()}, date {date}"
+        )
+    )
+
     return {
-        "response_text": formatted,
+        "response_text": human_reply,
         "intent": "seat_availability",
         "data_required": "none",
         "emotion": "friendly",

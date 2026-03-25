@@ -12,6 +12,8 @@
   justify-content: space-between;
   align-items: center;
   margin-bottom: 16px;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .header h1 {
@@ -23,6 +25,17 @@
   margin: 2px 0 0;
   font-size: 13px;
   color: #888;
+}
+
+/* Pending Intent Badge */
+.pending-badge {
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1d4ed8;
+  font-weight: 600;
 }
 
 /* Clear button */
@@ -52,6 +65,7 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+  scroll-behavior: smooth;
 }
 
 /* Messages */
@@ -62,6 +76,7 @@
   font-size: 15px;
   line-height: 1.5;
   box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  word-wrap: break-word;
 }
 
 .message.user {
@@ -79,6 +94,7 @@
 
 .loading {
   color: #94a3b8;
+  font-style: italic;
 }
 
 /* Intent */
@@ -87,6 +103,7 @@
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 /* Input */
@@ -103,6 +120,7 @@
   border-radius: 10px;
   border: 1px solid #cbd5e1;
   outline: none;
+  transition: border 0.2s ease;
 }
 
 .input-box:focus {
@@ -119,6 +137,7 @@
   border: none;
   cursor: pointer;
   font-weight: 600;
+  transition: background 0.2s ease;
 }
 
 .send-btn:hover {
@@ -152,6 +171,7 @@
   border: 1px solid #e2e8f0;
   cursor: pointer;
   color: #475569;
+  transition: background 0.2s ease;
 }
 
 .quick-btn:hover {
