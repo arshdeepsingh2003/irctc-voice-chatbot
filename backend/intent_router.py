@@ -6,7 +6,8 @@ from handlers.seat_handler    import handle_seat_availability
 from handlers.general_handler import handle_general
 
 
-def route_intent(intent_result: dict) -> dict:
+def route_intent(intent_result: dict,
+                 memory_context: str = "") -> dict:
     """
     Routes the intent_result from Ollama to the correct handler.
     Priority: extracted data > declared intent > fallback
@@ -37,13 +38,13 @@ def route_intent(intent_result: dict) -> dict:
 
     # ── Route ──
     if intent == "pnr_status":
-        return handle_pnr(extracted)
+        return handle_pnr(extracted, memory_context=memory_context)
 
     elif intent == "train_status":
-        return handle_train_status(extracted)
+        return handle_train_status(extracted, memory_context=memory_context)
 
     elif intent == "seat_availability":
-        return handle_seat_availability(extracted)
+        return handle_seat_availability(extracted, memory_context=memory_context)
 
     else:
         return handle_general(extracted, ollama_text)

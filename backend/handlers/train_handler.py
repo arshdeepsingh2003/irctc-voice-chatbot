@@ -3,7 +3,7 @@
 import re
 from api.railway_client import fetch_train_status
 from api.api_helpers import format_train_status_response
-from ollama_client import humanize_response   # ✅ NEW
+from ollama_client import humanize_response
 
 
 def validate_train_number(train_number: str) -> bool:
@@ -11,7 +11,8 @@ def validate_train_number(train_number: str) -> bool:
     return bool(re.fullmatch(r'\d{4,5}', str(train_number).strip()))
 
 
-def handle_train_status(extracted: dict) -> dict:
+def handle_train_status(extracted: dict,
+                        memory_context: str = "") -> dict:
     """
     Main handler for train_status intent.
     """
@@ -67,9 +68,8 @@ def handle_train_status(extracted: dict) -> dict:
 
                 if isinstance(inner, dict):
                     print("\n=== result['data']['data'] keys ===")
-                    print(list(inner.keys())[:20])  # first 20 keys
+                    print(list(inner.keys())[:20])
 
-                    # Check deeper nesting just in case
                     if inner.get("data"):
                         print("\n=== result['data']['data']['data'] type ===")
                         print(type(inner["data"]))
@@ -91,18 +91,19 @@ def handle_train_status(extracted: dict) -> dict:
             "status": "api_error"
         }
 
-    # STEP 6: Format response (UNCHANGED)
+    # STEP 6: Format response
     formatted = format_train_status_response(result.get("data"))
 
-    # STEP 7: Humanize with Ollama (✅ NEW)
+    # STEP 7: Humanize (UPDATED)
     human_reply = humanize_response(
         raw_data_text=formatted,
         intent="train_status",
-        context=f"Train number: {train_clean}"
+        context=f"Train number: {train_clean}",
+        memory_context=memory_context   # ✅ NEW
     )
 
     return {
-        "response_text": human_reply,   # ✅ replaced formatted → human_reply
+        "response_text": human_reply,
         "intent": "train_status",
         "data_required": "none",
         "emotion": "friendly",

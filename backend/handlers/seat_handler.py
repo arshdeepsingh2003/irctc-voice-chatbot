@@ -51,7 +51,8 @@ def normalize_class(raw_class: str) -> str | None:
     return VALID_CLASSES.get(raw_class.lower().strip())
 
 
-def handle_seat_availability(extracted: dict) -> dict:
+def handle_seat_availability(extracted: dict,
+                             memory_context: str = "") -> dict:
 
     train_number = extracted.get("train_number")
     date         = extracted.get("date")
@@ -90,7 +91,7 @@ def handle_seat_availability(extracted: dict) -> dict:
             "status": "missing_data"
         }
 
-    # 🔥 CRITICAL FIX — normalize BEFORE validation
+    # 🔥 normalize BEFORE validation
     date = normalize_date(date)
 
     # STEP 3: Class
@@ -124,7 +125,7 @@ def handle_seat_availability(extracted: dict) -> dict:
             "status": "missing_data"
         }
 
-    # 🔥 API DATE PARSING (now works because normalized)
+    # 🔥 API DATE PARSING
     api_date = parse_date_for_api(date)
     if not api_date:
         return {
@@ -163,7 +164,8 @@ def handle_seat_availability(extracted: dict) -> dict:
         context=(
             f"Train {train_number}, {normalized} class, "
             f"{from_station.upper()} to {to_station.upper()}, date {date}"
-        )
+        ),
+        memory_context=memory_context   # ✅ NEW
     )
 
     return {

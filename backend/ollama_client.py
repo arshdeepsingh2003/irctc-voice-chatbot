@@ -48,13 +48,6 @@ EXTRACTION RULES:
   - Date patterns like "26 April 2026", "25 Jun 2025", "26/04/2026" → always set as "date", never train_number
   - If message is ONLY a date like "26 April 2026" → date = "26 April 2026", train_number = null
 
-DATE EXTRACTION EXAMPLES — memorize:
-  "26 April 2026"     → date = "26 April 2026",  train_number = null
-  "25 Jun 2025"       → date = "25 Jun 2025",    train_number = null
-  "travel on 1 May"   → date = "1 May",          train_number = null
-  "train 12301"       → train_number = "12301",  date = null
-  "12301 on 25 June"  → train_number = "12301",  date = "25 June"
-
 RESPONSE FORMAT — always this exact JSON, nothing else:
 {
   "response_text": "friendly reply",
@@ -72,23 +65,20 @@ RESPONSE FORMAT — always this exact JSON, nothing else:
 }"""
 
 
-# 🔥 ANTI-HALLUCINATION CLEANER (MOST IMPORTANT)
+# 🔥 CLEANER (UNCHANGED)
 def clean_extracted_fields(extracted: dict, user_message: str) -> dict:
     text = user_message.lower()
-    cleaned = dict(extracted)  # ✅ preserve previous data
+    cleaned = dict(extracted)
 
-    # ✅ PNR
     pnr_match = re.findall(r"\b\d{10}\b", user_message)
     if pnr_match:
         cleaned["pnr_number"] = pnr_match[0]
 
-    # ✅ Train number (avoid years)
     train_match = re.findall(r"\b\d{4,5}\b", user_message)
     train_match = [t for t in train_match if t not in ["2024", "2025", "2026", "2027"]]
     if train_match:
         cleaned["train_number"] = train_match[0]
 
-    # 🔥 DATE (ONLY UPDATE IF FOUND)
     date_patterns = [
         r'\b\d{1,2}\s*(jan|feb|mar|apr|april|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s*\d{0,4}',
         r'\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}'
@@ -108,15 +98,13 @@ def clean_extracted_fields(extracted: dict, user_message: str) -> dict:
         date_found = "tomorrow"
 
     if date_found:
-        cleaned["date"] = date_found  # ✅ ONLY if found
+        cleaned["date"] = date_found
 
-    # ✅ Class
     classes = ["sl", "3a", "2a", "1a", "cc", "2s"]
     found_class = next((c.upper() for c in classes if c in text), None)
     if found_class:
         cleaned["class"] = found_class
 
-    # 🔥 STATIONS (ONLY UPDATE IF FOUND)
     station_match = re.search(r'\b([A-Z]{3,5})\s+to\s+([A-Z]{3,5})\b', user_message.upper())
 
     if station_match:
@@ -134,14 +122,28 @@ def clean_extracted_fields(extracted: dict, user_message: str) -> dict:
     return cleaned
 
 
-def ask_ollama(user_message: str, conversation_history: list = None) -> dict:
+# ✅ UPDATED ask_ollama WITH MEMORY
+def ask_ollama(user_message: str,
+               conversation_history: list = None,
+               memory_context: str = "") -> dict:
+
     history_text = ""
     if conversation_history:
         for turn in conversation_history[-4:]:
             role = "User" if turn["role"] == "user" else "Assistant"
             history_text += f"{role}: {turn['content']}\n"
 
-    full_prompt = f"{history_text}User: {user_message}\nAssistant:"
+    # ✅ memory injection
+    memory_section = ""
+    if memory_context:
+        memory_section = f"\n{memory_context}\n"
+
+    full_prompt = (
+        f"{memory_section}"
+        f"{history_text}"
+        f"User: {user_message}\n"
+        f"Assistant:"
+    )
 
     payload = {
         "model": MODEL_NAME,
@@ -150,7 +152,7 @@ def ask_ollama(user_message: str, conversation_history: list = None) -> dict:
         "stream": False,
         "format": "json",
         "options": {
-            "temperature": 0.2,
+            "temperature": 0.3,
             "top_p": 0.9
         }
     }
@@ -164,7 +166,7 @@ def ask_ollama(user_message: str, conversation_history: list = None) -> dict:
                 break
             except httpx.TimeoutException:
                 if attempt == 1:
-                    return fallback_response("Server timeout. Please try again.")
+                    return fallback_response("Ollama is taking too long. Please try again.")
                 continue
 
         result = response.json()
@@ -172,6 +174,7 @@ def ask_ollama(user_message: str, conversation_history: list = None) -> dict:
 
         parsed = parse_ollama_response(raw_text)
 
+        # ✅ KEEP CLEANER
         parsed["extracted"] = clean_extracted_fields(
             parsed.get("extracted", {}),
             user_message
@@ -180,9 +183,9 @@ def ask_ollama(user_message: str, conversation_history: list = None) -> dict:
         return parsed
 
     except httpx.ConnectError:
-        return fallback_response("Ollama is not running. Start using: ollama serve")
+        return fallback_response("Ollama is not running. Please start it with: ollama serve")
     except Exception as e:
-        return fallback_response(f"Error: {str(e)}")
+        return fallback_response(f"Something went wrong: {str(e)}")
 
 
 def parse_ollama_response(raw_text: str) -> dict:
@@ -214,36 +217,31 @@ def fallback_response(message: str) -> dict:
 
 
 HUMANIZER_PROMPT = """You are a warm, friendly IRCTC railway assistant for Indian Railways.
-
-You will be given structured railway data. Your job is to convert it into a natural, 
-conversational reply — like a helpful friend explaining it, not a robot reading data.
-
-Rules:
-1. Be warm, friendly and helpful. Use simple English.
-2. Keep it concise — 3 to 5 sentences max.
-3. Highlight the most important information first.
-4. Add helpful context where relevant.
-5. End with a helpful offer like "Anything else I can help you with? 😊"
-6. Use 1-2 emojis naturally.
-7. NEVER make up data.
-8. Output ONLY the reply text.
-9. do not provide emojis
+Be concise, simple, and helpful. Do not use emojis.
 """
 
 
-def humanize_response(raw_data_text: str, intent: str, context: str = "") -> str:
+# ✅ UPDATED humanize_response WITH MEMORY
+def humanize_response(raw_data_text: str,
+                      intent: str,
+                      context: str = "",
+                      memory_context: str = "") -> str:
+
     intent_context = {
         "pnr_status": "The user asked about their PNR / ticket status.",
         "train_status": "The user asked about live train running status.",
         "seat_availability": "The user asked about seat availability for booking.",
     }
 
+    memory_note = f"\n{memory_context}" if memory_context else ""
+
     user_prompt = (
-        f"{intent_context.get(intent, 'The user asked a railway question.')}\n\n"
-        f"Here is the railway data:\n\n"
-        f"{raw_data_text}\n\n"
+        f"{intent_context.get(intent, 'The user asked a railway question.')}"
+        f"{memory_note}\n\n"
+        f"Railway data:\n{raw_data_text}\n\n"
         f"{'Additional context: ' + context if context else ''}\n\n"
-        f"Now write a warm, friendly reply based on this data."
+        f"Write a warm, friendly, conversational reply. "
+        f"If you know the user's name, use it naturally once."
     )
 
     payload = {

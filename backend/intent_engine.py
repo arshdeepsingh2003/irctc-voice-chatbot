@@ -34,8 +34,13 @@ def extract_date_fallback(text: str):
     return None
 
 
-def detect_intent(message: str, conversation_history: list = None) -> dict:
-    result = ask_ollama(message, conversation_history)
+# ✅ UPDATED: added memory_context
+def detect_intent(message: str,
+                  conversation_history: list = None,
+                  memory_context: str = "") -> dict:
+
+    # ✅ pass memory_context to ollama
+    result = ask_ollama(message, conversation_history, memory_context)
 
     intent = result.get("intent", "general_query")
     extracted = result.get("extracted", {}) or {}

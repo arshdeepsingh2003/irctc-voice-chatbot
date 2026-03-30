@@ -26,15 +26,12 @@ export default function App() {
   const [pendingIntent, setPendingIntent] = useState(null);
   const [pendingData, setPendingData] = useState({});
 
-  // 🎤 Listening state
   const [listening, setListening] = useState(false);
 
-  // 🔊 TTS state
   const [speaking, setSpeaking] = useState(false);
   const [ttsEnabled, setTtsEnabled] = useState(true);
   const synthRef = useRef(window.speechSynthesis);
 
-  // 🎤 Speech Recognition
   const recognitionRef = useRef(null);
 
   useEffect(() => {
@@ -87,7 +84,6 @@ export default function App() {
     recognition.start();
   };
 
-  // 🔊 Speak function
   const speak = (text) => {
     if (!ttsEnabled || !synthRef.current) return;
 
@@ -107,7 +103,6 @@ export default function App() {
     setSpeaking(false);
   };
 
-  // Auto scroll
   const bottomRef = useRef(null);
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -135,7 +130,8 @@ export default function App() {
           message: userText,
           history: updatedHistory,
           pending_intent: pendingIntent,
-          pending_data: pendingData
+          pending_data: pendingData,
+          session_id: "user_session_1"   // ✅ ADDED
         }),
       });
 
@@ -160,7 +156,6 @@ export default function App() {
 
       setMessages(prev => [...prev, botMsg]);
 
-      // 🔊 Speak response
       speak(data.response_text);
 
     } catch (err) {
@@ -179,14 +174,25 @@ export default function App() {
     setLoading(false);
   };
 
-  const clearChat = () => {
+  // ✅ UPDATED
+  const clearChat = async () => {
     stopSpeaking();
+
+    try {
+      await fetch(`${API_URL}/memory/user_session_1`, {
+        method: "DELETE"
+      });
+    } catch (err) {
+      console.error("Failed to clear memory:", err);
+    }
+
     setMessages([
       { from: "bot", text: "Chat cleared! How can I help you? 🚂" }
     ]);
     setHistory([]);
     setPendingIntent(null);
     setPendingData({});
+    setInput("");
   };
 
   return (
@@ -218,8 +224,6 @@ export default function App() {
           Clear Chat
         </button>
       </div>
-
-
 
       <div className="chat-window">
         {messages.map((msg, i) => (
@@ -280,7 +284,6 @@ export default function App() {
         </button>
       </div>
 
-      
     </div>
   );
 }
